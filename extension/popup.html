@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>Stadt Land Fluss Helfer</h1>
+  <p id="status" class="status">Prüfe Seite …</p>
+
+  <label class="row"><input type="checkbox" id="enabled"> Helfer aktiv</label>
+  <label class="row"><input type="checkbox" id="showPanel"> Panel auf der Seite anzeigen</label>
+  <label class="row"><input type="checkbox" id="overwrite"> Bereits ausgefüllte Felder überschreiben</label>
+  <label class="row">Buchstabe manuell:
+    <input type="text" id="manualLetter" maxlength="1" size="2" placeholder="auto">
+  </label>
+
+  <button id="fill">Jetzt ausfüllen (Alt+F)</button>
+  <script src="popup.js"></script>
+</body>
+</html>
