@@ -125,6 +125,31 @@
     return out;
   }
 
+  // Ausgewählte Themen: erst über Eingabefelder, sonst über sichtbare Überschriften/Labels
+  function detectTopics() {
+    const topics = [];
+    const seen = new Set();
+    const add = (category, el) => {
+      if (seen.has(category)) return;
+      seen.add(category);
+      topics.push({ category, el: el || null });
+    };
+    for (const { el, category } of findFields()) add(category, el);
+    if (!topics.length && document.body) {
+      let n = 0;
+      for (const el of document.body.querySelectorAll('*')) {
+        if (++n > 3000) break;
+        if (el.children.length || el.closest('#slf-helper-host') || el.offsetParent === null) continue;
+        if (/^(script|style|noscript|button|a)$/i.test(el.tagName)) continue;
+        const t = el.textContent.trim();
+        if (t.length < 2 || t.length > 30) continue;
+        const category = matchCategory(t);
+        if (category && SLF_WORDS[category]) add(category, null);
+      }
+    }
+    return topics;
+  }
+
   // ---------- Wörter ----------
   function wordsFor(category, letter) {
     const list = (SLF_WORDS[category] || '').split(/\s+/).filter(Boolean);
@@ -163,7 +188,10 @@
   }
 
   // ---------- Panel (Shadow DOM) ----------
-  let host, root, lastLetter = '';
+  const CHIPS_PER_TOPIC = 6;
+  let host, root, lastSignature = '';
+  let collapsed = false;
+  let shuffleSeed = 0;
 
   function ensurePanel() {
     if (host) return;
@@ -173,16 +201,28 @@
     root.innerHTML = `
       <style>
         :host { all: initial; }
-        .panel { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
-          font: 14px/1.3 system-ui, sans-serif; background: #1f2937; color: #f9fafb;
-          border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
-          display: flex; align-items: center; gap: 10px; }
+        .panel { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; width: 300px;
+          max-height: 70vh; overflow: auto; font: 14px/1.3 system-ui, sans-serif;
+          background: #1f2937; color: #f9fafb; border-radius: 12px; padding: 10px 12px;
+          box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+        .head { display: flex; align-items: center; gap: 8px; }
         .letter { font-weight: 700; font-size: 20px; min-width: 26px; text-align: center;
           background: #374151; border-radius: 8px; padding: 2px 6px; }
-        button { font: inherit; cursor: pointer; border: 0; border-radius: 8px;
-          padding: 6px 10px; background: #10b981; color: #052e1f; font-weight: 600; }
-        button:hover { background: #34d399; }
-        .msg { font-size: 12px; opacity: .8; max-width: 180px; }
+        .title { flex: 1; font-weight: 600; }
+        button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 4px 8px;
+          background: #374151; color: #f9fafb; }
+        button:hover { background: #4b5563; }
+        button.primary { background: #10b981; color: #052e1f; font-weight: 600; }
+        button.primary:hover { background: #34d399; }
+        .body { margin-top: 8px; }
+        .topic { margin: 8px 0; }
+        .topic h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase;
+          letter-spacing: .04em; color: #9ca3af; }
+        .chip { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px; border-radius: 999px;
+          background: #064e3b; color: #d1fae5; cursor: pointer; font-size: 13px; }
+        .chip:hover { background: #047857; }
+        .none, .msg { font-size: 12px; opacity: .75; }
+        .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
         .sugg { position: fixed; z-index: 2147483647; background: #fff; color: #111;
           border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
           font: 13px system-ui, sans-serif; display: none; }
@@ -191,13 +231,22 @@
         .sugg span:hover { background: #a7f3d0; }
       </style>
       <div class="panel" id="panel">
-        <span class="letter" id="letter">?</span>
-        <button id="fill" title="Alt+F">Ausfüllen</button>
-        <span class="msg" id="msg"></span>
+        <div class="head">
+          <span class="letter" id="letter">?</span>
+          <span class="title">Lösungsvorschläge</span>
+          <button id="shuffle" title="Neue Vorschläge">⟳</button>
+          <button id="toggle" title="Ein-/Ausklappen">–</button>
+        </div>
+        <div class="body" id="body"></div>
       </div>
       <div class="sugg" id="sugg"></div>`;
     document.documentElement.appendChild(host);
-    root.getElementById('fill').addEventListener('click', doFill);
+    root.getElementById('shuffle').addEventListener('click', () => { shuffleSeed++; renderPanel(true); });
+    root.getElementById('toggle').addEventListener('click', () => {
+      collapsed = !collapsed;
+      root.getElementById('body').style.display = collapsed ? 'none' : '';
+      root.getElementById('toggle').textContent = collapsed ? '+' : '–';
+    });
   }
 
   function setMsg(text) {
@@ -205,24 +254,104 @@
     if (m) m.textContent = text;
   }
 
+  // Deterministisch gemischt je (Seed, Kategorie, Buchstabe), damit Vorschläge beim Neuzeichnen stabil bleiben
+  function seededShuffle(arr, seedStr) {
+    let h = 2166136261;
+    for (const c of seedStr) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+    const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909)), (h >>> 0) / 4294967296);
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function copyText(text) {
+    try { navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* ignorieren */ }
+  }
+
   function doFill() {
     const r = fillAll();
-    if (!r.letter) setMsg('Kein Buchstabe erkannt – im Popup manuell setzen.');
-    else if (!r.fields) setMsg('Keine Felder erkannt.');
-    else setMsg(`${r.filled} von ${r.fields} Feldern gefüllt.`);
-    renderPanel();
+    renderPanel(true);
+    setMsg(!r.letter ? 'Kein Buchstabe erkannt – im Popup manuell setzen.'
+      : !r.fields ? 'Keine Eingabefelder erkannt – Vorschläge anklicken zum Kopieren.'
+      : `${r.filled} von ${r.fields} Feldern gefüllt.`);
     return r;
   }
 
-  function renderPanel() {
+  function renderPanel(force) {
     if (!settings.enabled || !settings.showPanel) {
       if (host) host.style.display = 'none';
       return;
     }
     ensurePanel();
     host.style.display = '';
-    lastLetter = detectLetter();
-    root.getElementById('letter').textContent = lastLetter || '?';
+
+    const letter = detectLetter();
+    const topics = detectTopics();
+    const signature = letter + '|' + topics.map((t) => t.category).join(',') + '|' + shuffleSeed;
+    if (!force && signature === lastSignature) return;
+    lastSignature = signature;
+
+    root.getElementById('letter').textContent = letter || '?';
+    const body = root.getElementById('body');
+    body.innerHTML = '';
+
+    if (!letter || !topics.length) {
+      const p = document.createElement('div');
+      p.className = 'none';
+      p.textContent = !letter
+        ? 'Buchstabe nicht erkannt – im Popup manuell eingeben.'
+        : 'Keine Themen erkannt – sind Felder/Themen auf der Seite sichtbar?';
+      body.appendChild(p);
+    }
+
+    if (letter) {
+      for (const { category, el } of topics) {
+        const words = seededShuffle(wordsFor(category, letter), `${shuffleSeed}|${category}|${letter}`)
+          .slice(0, CHIPS_PER_TOPIC);
+        const box = document.createElement('div');
+        box.className = 'topic';
+        const h = document.createElement('h4');
+        h.textContent = category;
+        box.appendChild(h);
+        if (!words.length) {
+          const n = document.createElement('span');
+          n.className = 'none';
+          n.textContent = `keine Vorschläge mit ${letter}`;
+          box.appendChild(n);
+        }
+        for (const w of words) {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = w;
+          chip.title = el ? 'Klicken: ins Feld eintragen & kopieren' : 'Klicken: kopieren';
+          chip.addEventListener('mousedown', (e) => e.preventDefault());
+          chip.addEventListener('click', () => {
+            copyText(w);
+            usedWords.add(w);
+            if (el && el.isConnected) setValue(el, w);
+            setMsg(`„${w}“ ${el ? 'eingetragen & ' : ''}kopiert.`);
+          });
+          box.appendChild(chip);
+        }
+        body.appendChild(box);
+      }
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const fill = document.createElement('button');
+    fill.className = 'primary';
+    fill.textContent = 'Alle ausfüllen';
+    fill.title = 'Alt+F';
+    fill.addEventListener('click', doFill);
+    const msg = document.createElement('span');
+    msg.className = 'msg';
+    msg.id = 'msg';
+    actions.append(fill, msg);
+    body.appendChild(actions);
   }
 
   // ---------- Vorschläge beim Fokussieren ----------
@@ -276,7 +405,7 @@
       ensurePanel();
       sendResponse(doFill());
     } else if (msg && msg.type === 'status') {
-      sendResponse({ letter: detectLetter(), fields: findFields().length });
+      sendResponse({ letter: detectLetter(), fields: findFields().length, topics: detectTopics().map((t) => t.category) });
     }
   });
 
@@ -289,11 +418,9 @@
       clearTimeout(t);
       t = setTimeout(() => {
         if (!settings.enabled || !settings.showPanel) return;
-        const l = detectLetter();
-        if (l !== lastLetter) {
-          usedWords.clear();
-          renderPanel();
-        }
+        const before = lastSignature.split('|')[0];
+        if (detectLetter() !== before) usedWords.clear();
+        renderPanel();
       }, 300);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   });

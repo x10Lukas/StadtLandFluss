@@ -4,8 +4,10 @@ Chrome/Edge-Extension (Manifest V3) für https://stadtlandfluss.cool/
 
 - Erkennt den aktuellen Buchstaben (Text „Buchstabe: X“ oder großes Einzelzeichen auf der Seite; sonst manuell im Popup).
 - Ordnet Eingabefelder anhand ihrer Beschriftung einer Kategorie zu (Stadt, Land, Fluss, Name, Tier, Beruf, …).
-- „Ausfüllen“-Button im Panel, Popup oder Tastenkürzel **Alt+F** füllt leere Felder mit Wörtern zum Buchstaben.
-- Beim Fokussieren eines Feldes erscheinen Wortvorschläge zum Anklicken.
+- Erkennt die ausgewählten Themen (über Eingabefelder, sonst über sichtbare Themen-Texte) und zeigt im Panel unten rechts Lösungsvorschläge je Thema zum gewählten Buchstaben.
+- Klick auf einen Vorschlag kopiert ihn und trägt ihn – falls ein Feld existiert – dort ein. ⟳ mischt neue Vorschläge.
+- „Alle ausfüllen“ (Panel, Popup oder **Alt+F**) füllt leere Felder automatisch.
+- Beim Fokussieren eines Feldes erscheinen zusätzlich Wortvorschläge zum Anklicken.
 
 ## Installation
 1. `chrome://extensions` öffnen, **Entwicklermodus** aktivieren.

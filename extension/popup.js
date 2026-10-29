@@ -18,7 +18,7 @@ function sendToTab(message, cb) {
 function refreshStatus() {
   sendToTab({ type: 'status' }, (res) => {
     $('status').textContent = res
-      ? `Buchstabe: ${res.letter || 'nicht erkannt'} · ${res.fields} Felder erkannt`
+      ? `Buchstabe: ${res.letter || 'nicht erkannt'} · Themen: ${(res.topics || []).join(', ') || 'keine erkannt'}`
       : 'Öffne stadtlandfluss.cool, um den Helfer zu nutzen.';
   });
 }
