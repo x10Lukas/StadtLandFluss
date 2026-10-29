@@ -21,3 +21,11 @@ Chrome/Edge-Extension (Manifest V3) für https://stadtlandfluss.cool/
 ## Themen
 Die Extension kennt über 60 Themen (die Standardthemen des Spiels plus Spezialthemen wie „Grund für Verspätung“, „Tut weh“ oder „Sollte man nicht essen“). Themen ohne Wortliste erscheinen trotzdem im Panel, mit dem Hinweis „noch keine Wortliste“.
 Neues Thema ergänzen: Wortliste in `words.js` (Schlüssel = Themenname) und passendes Muster in `CATEGORY_PATTERNS` (`content.js`).
+
+## Bewertung („Chance, dass andere es auch schreiben“)
+In `words.js` stehen die Wörter je Buchstabe nach Naheliegen sortiert: das naheliegendste zuerst. Daraus ergibt sich die Markierung im Panel:
+- 🟢 **niedrig** – eher eigenständig, vermutlich schreibt es kaum jemand sonst
+- 🟡 **mittel**
+- 🔴 **hoch** – naheliegend, viele schreiben es auch
+
+Pro Thema werden standardmäßig 4 gemischte Vorschläge gezeigt (im Popup einstellbar, ⟳ mischt neu). Neue Wörter einfach an der passenden Stelle im Buchstaben-Array einfügen. Themen mit `rated: false` haben keine Bewertung.

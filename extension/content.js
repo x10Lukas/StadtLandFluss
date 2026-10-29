@@ -73,7 +73,7 @@
     ['Name', /\bname|vorname/i],
   ];
 
-  const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true };
+  const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4 };
   let settings = { ...DEFAULTS };
   const usedWords = new Set();
 
@@ -235,18 +235,54 @@
   }
 
   // ---------- Wörter ----------
+  const RATING_TEXT = {
+    1: 'Chance niedrig – wahrscheinlich schreibt das kaum jemand sonst',
+    2: 'Chance mittel – manche schreiben das auch',
+    3: 'Chance hoch – viele schreiben das auch',
+  };
+  const normLetter = (c) => c.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+
+  // Bewertung nach Platz in der Liste des Buchstabens: vorn = naheliegend = andere schreiben es auch.
+  // 3 = hoch, 2 = mittel, 1 = niedrig, 0 = keine Bewertung (Liste ungeordnet).
+  function rateAt(i, n) {
+    if (n === 1) return 3;
+    const f = (i + 0.5) / n;
+    return f < 1 / 3 ? 3 : f < 2 / 3 ? 2 : 1;
+  }
+
   function wordsFor(category, letter) {
-    const raw = SLF_WORDS[category] || [];
-    const list = Array.isArray(raw) ? raw : raw.split(/\s+/).filter(Boolean);
-    return list.filter((w) => w[0].toUpperCase() === letter);
+    const entry = SLF_WORDS[category];
+    const list = (entry && entry.w && entry.w[normLetter(letter)]) || [];
+    return list.map((w, i) => ({ w, r: entry.rated ? rateAt(i, list.length) : 0 }));
+  }
+
+  // Wählt n Vorschläge gemischt aus allen Bewertungsstufen (mittel, niedrig, hoch, …),
+  // sortiert mit den „eigenständigsten“ zuerst.
+  function pickSuggestions(items, n, seedStr) {
+    const tiers = { 0: [], 1: [], 2: [], 3: [] };
+    for (const it of items) tiers[it.r].push(it);
+    for (const k of Object.keys(tiers)) tiers[k] = seededShuffle(tiers[k], `${seedStr}|${k}`);
+    const order = items.some((i) => i.r) ? [2, 1, 3] : [0];
+    const picked = [];
+    while (picked.length < n && order.some((t) => tiers[t].length)) {
+      for (const t of order) {
+        if (picked.length >= n) break;
+        const x = tiers[t].shift();
+        if (x) picked.push(x);
+      }
+    }
+    return picked.sort((a, b) => a.r - b.r);
   }
 
   function pickWord(category, letter) {
     const pool = wordsFor(category, letter);
-    const fresh = pool.filter((w) => !usedWords.has(w));
+    const fresh = pool.filter((x) => !usedWords.has(x.w));
     const src = fresh.length ? fresh : pool;
-    if (!src.length) return '';
-    return src[Math.floor(Math.random() * src.length)];
+    for (const tier of [2, 1, 0, 3]) {
+      const c = src.filter((x) => x.r === tier);
+      if (c.length) return c[Math.floor(Math.random() * c.length)].w;
+    }
+    return '';
   }
 
   function setValue(el, value) {
@@ -273,7 +309,6 @@
   }
 
   // ---------- Panel (Shadow DOM) ----------
-  const CHIPS_PER_TOPIC = 6;
   let host, root, lastSignature = '';
   let collapsed = false;
   let shuffleSeed = 0;
@@ -305,9 +340,17 @@
         .topic { margin: 8px 0; }
         .topic h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase;
           letter-spacing: .04em; color: #9ca3af; }
-        .chip { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px; border-radius: 999px;
+        .chip { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px; border-radius: 8px;
           background: #064e3b; color: #d1fae5; cursor: pointer; font-size: 13px; }
         .chip:hover { background: #047857; }
+        .chip.r1 { box-shadow: inset 4px 0 0 #34d399; padding-left: 12px; }
+        .chip.r2 { box-shadow: inset 4px 0 0 #fbbf24; padding-left: 12px; }
+        .chip.r3 { box-shadow: inset 4px 0 0 #f87171; padding-left: 12px; }
+        .legend { font-size: 11px; color: #9ca3af; margin-top: 8px; }
+        .lg { display: inline-block; margin-left: 6px; padding: 0 6px 0 9px; border-radius: 4px; background: #374151; color: #e5e7eb; }
+        .lg.r1 { box-shadow: inset 3px 0 0 #34d399; }
+        .lg.r2 { box-shadow: inset 3px 0 0 #fbbf24; }
+        .lg.r3 { box-shadow: inset 3px 0 0 #f87171; }
         .none, .msg { font-size: 12px; opacity: .75; }
         .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
         .sugg { position: fixed; z-index: 2147483647; background: #fff; color: #111;
@@ -315,6 +358,9 @@
           font: 13px system-ui, sans-serif; display: none; pointer-events: none; }
         .sugg span { display: inline-block; padding: 3px 8px; margin: 2px; border-radius: 6px;
           background: #ecfdf5; cursor: pointer; pointer-events: auto; }
+        .sugg span.r1 { box-shadow: inset 4px 0 0 #10b981; padding-left: 12px; }
+        .sugg span.r2 { box-shadow: inset 4px 0 0 #f59e0b; padding-left: 12px; }
+        .sugg span.r3 { box-shadow: inset 4px 0 0 #ef4444; padding-left: 12px; }
         .sugg span:hover { background: #a7f3d0; }
       </style>
       <div class="panel" id="panel">
@@ -387,7 +433,7 @@
     if (!force && flicker) return;
     if (complete) lastGood = { time: Date.now(), letter, cats };
 
-    const signature = letter + '|' + cats.join(',') + '|' + shuffleSeed;
+    const signature = letter + '|' + cats.join(',') + '|' + shuffleSeed + '|' + settings.count;
     if (!force && signature === lastSignature) return;
     lastSignature = signature;
 
@@ -404,10 +450,12 @@
       body.appendChild(p);
     }
 
+    let anyRated = false;
+    const topicsBox = document.createElement('div');
     if (letter) {
       for (const { category, el } of topics) {
-        const words = seededShuffle(wordsFor(category, letter), `${shuffleSeed}|${category}|${letter}`)
-          .slice(0, CHIPS_PER_TOPIC);
+        const words = pickSuggestions(wordsFor(category, letter), settings.count, `${shuffleSeed}|${category}|${letter}`);
+        if (words.some((x) => x.r)) anyRated = true;
         const box = document.createElement('div');
         box.className = 'topic';
         const h = document.createElement('h4');
@@ -419,11 +467,11 @@
           n.textContent = SLF_WORDS[category] ? `keine Vorschläge mit ${letter}` : 'noch keine Wortliste für dieses Thema';
           box.appendChild(n);
         }
-        for (const w of words) {
+        for (const { w, r } of words) {
           const chip = document.createElement('span');
-          chip.className = 'chip';
+          chip.className = 'chip' + (r ? ` r${r}` : '');
           chip.textContent = w;
-          chip.title = el ? 'Klicken: ins Feld eintragen & kopieren' : 'Klicken: kopieren';
+          chip.title = (r ? RATING_TEXT[r] + '\n' : '') + (el ? 'Klicken: ins Feld eintragen & kopieren' : 'Klicken: kopieren');
           chip.addEventListener('mousedown', (e) => e.preventDefault());
           chip.addEventListener('click', () => {
             copyText(w);
@@ -433,9 +481,18 @@
           });
           box.appendChild(chip);
         }
-        body.appendChild(box);
+        topicsBox.appendChild(box);
       }
     }
+
+    if (anyRated) {
+      const legend = document.createElement('div');
+      legend.className = 'legend';
+      legend.innerHTML = 'Chance, dass andere es auch schreiben: ' +
+        '<span class="lg r1">niedrig</span><span class="lg r2">mittel</span><span class="lg r3">hoch</span>';
+      body.appendChild(legend);
+    }
+    body.appendChild(topicsBox);
 
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -455,11 +512,14 @@
   function showSuggestions(el, category) {
     const letter = detectLetter();
     const sugg = root.getElementById('sugg');
-    const words = letter ? wordsFor(category, letter).slice(0, 8) : [];
+    const words = letter
+      ? pickSuggestions(wordsFor(category, letter), Math.max(settings.count, 6), `${shuffleSeed}|${category}|${letter}`)
+      : [];
     if (!words.length) { sugg.style.display = 'none'; return; }
     sugg.innerHTML = '';
-    for (const w of words) {
+    for (const { w, r } of words) {
       const s = document.createElement('span');
+      if (r) { s.className = `r${r}`; s.title = RATING_TEXT[r]; }
       s.textContent = w;
       s.addEventListener('mousedown', (e) => {
         e.preventDefault();

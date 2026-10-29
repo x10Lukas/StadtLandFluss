@@ -1,4 +1,4 @@
-const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true };
+const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4 };
 const $ = (id) => document.getElementById(id);
 
 function withTab(cb) {
@@ -28,6 +28,7 @@ chrome.storage.sync.get(DEFAULTS, (s) => {
   $('showPanel').checked = s.showPanel;
   $('overwrite').checked = s.overwrite;
   $('manualLetter').value = s.manualLetter;
+  $('count').value = String(s.count);
   refreshStatus();
 });
 
@@ -36,6 +37,9 @@ for (const key of ['enabled', 'showPanel', 'overwrite']) {
     chrome.storage.sync.set({ [key]: $(key).checked }, refreshStatus);
   });
 }
+$('count').addEventListener('change', () => {
+  chrome.storage.sync.set({ count: Number($('count').value) });
+});
 $('manualLetter').addEventListener('input', () => {
   const v = $('manualLetter').value.trim().toUpperCase();
   $('manualLetter').value = v;
