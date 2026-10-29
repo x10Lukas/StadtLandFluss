@@ -4,22 +4,73 @@
 (() => {
   'use strict';
 
+  // Reihenfolge wichtig: spezifische Themen zuerst, allgemeine (Stadt, Land, Name …) zuletzt.
+  // Der Themenname muss ein Schlüssel in SLF_WORDS (words.js) sein, um Vorschläge zu liefern.
   const CATEGORY_PATTERNS = [
-    ['Stadt', /stadt|städte|city|ort\b/i],
-    ['Land', /\bland\b|länder|country/i],
-    ['Fluss', /fluss|flüsse|river|gewässer/i],
-    ['Name', /\bname|vorname|person/i],
-    ['Tier', /tier|animal/i],
-    ['Beruf', /beruf|job|profession/i],
-    ['Pflanze', /pflanze|plant|blume|baum/i],
-    ['Farbe', /farbe|color|colour/i],
-    ['Essen', /essen|speise|food|gericht|lebensmittel/i],
+    ['Sollte man nicht essen', /nicht\s+essen/i],
+    ['Sollte man nicht auf der Toilette tun', /toilette/i],
+    ['Namen den man keinem Kind geben sollte', /keinem\s+kind|kind\s+geben/i],
+    ['Darf im Kühlschrank nie fehlen', /kühlschrank/i],
+    ['Gegenstand auf dem Schreibtisch', /schreibtisch/i],
+    ['Größer als ein Elefant', /(größer|grösser)\s+als/i],
+    ['Kleiner als eine Ameise', /kleiner\s+als/i],
+    ['Grund für Verspätung', /versp[äa]tung/i],
+    ['Grund zum Heulen', /heulen/i],
+    ['Grund für Schulverweis', /schulverweis/i],
+    ['Erfundener Beruf', /erfunden/i],
+    ['Erhöht die Coolness', /erhöht.*cool/i],
+    ['Senkt die Coolness', /senkt.*cool/i],
+    ['No-Go beim ersten Date', /no.?go|\bdate\b/i],
+    ['Letzte Worte', /letzte\s+worte/i],
+    ['Wort aus einer Fremdsprache', /fremdsprache/i],
+    ['Englisches Wort', /englisch/i],
+    ['Auf dem Bauernhof', /bauernhof/i],
+    ['Elektrisches Gerät', /elektr/i],
+    ['Etwas ekeliges', /ekel/i],
+    ['Tut weh', /tut\s+weh/i],
+    ['Chemisches Element', /chemisch|\belement/i],
+    ['Computerspiel', /computerspiel|videospiel/i],
+    ['Fortbewegungsmittel', /fortbewegung/i],
+    ['Fabelwesen', /fabelwesen/i],
+    ['Dinoart', /dino/i],
+    ['Grabsteininschrift', /grabstein/i],
+    ['Anmachspruch', /anmach/i],
+    ['Werbeslogan', /slogan/i],
+    ['Rappername', /rapper|rappername/i],
+    ['Todesursache', /todesursache|\btod\b/i],
+    ['Scheidungsgrund', /scheidung/i],
+    ['Naturkatastrophe', /katastrophe/i],
+    ['Sehenswürdigkeit', /sehenswürdigkeit/i],
+    ['Superkraft', /superkraft|superkräfte/i],
+    ['Tanzart', /tanz/i],
+    ['Pizzabelag', /pizza/i],
+    ['Eissorte', /eissorte|\beis\b/i],
+    ['Cocktail', /cocktail/i],
+    ['Krankheit', /krankheit/i],
+    ['Instrument', /instrument/i],
+    ['Hobby', /hobby/i],
+    ['Gefühl', /gefühl/i],
+    ['Körperteil', /körperteil/i],
+    ['Schimpfwort', /schimpf/i],
+    ['Film/Serie', /film|serie/i],
+    ['Fußballer', /fu(ß|ss)ball/i],
+    ['Politiker', /politik/i],
+    ['Promi', /promi/i],
+    ['Sportart', /sport/i],
     ['Marke', /marke|brand|firma/i],
     ['Getränk', /getränk|drink|beverage/i],
-    ['Gegenstand', /gegenstand|ding\b|objekt|object/i],
+    ['Lebensmittel', /essen|speise|food|gericht|lebensmittel/i],
+    ['Gegenstand', /gegenstand|\bding\b|objekt|object/i],
+    ['Beruf', /beruf|\bjob\b|profession/i],
+    ['Pflanze', /pflanze|plant|blume|baum/i],
+    ['Farbe', /farbe|color|colour/i],
+    ['Tier', /tier|animal/i],
     ['Beere', /beere/i],
-    ['Berg', /berg|gebirge|mountain/i],
-    ['Sportart', /sport/i],
+    ['Berg', /\bberg|gebirge|mountain/i],
+    ['Stadt', /stadt|städte|city|\bort\b/i],
+    ['Land', /\bland\b|länder|country/i],
+    ['Fluss', /fluss|flüsse|river|gewässer/i],
+    ['Name', /\bname|vorname/i],
   ];
 
   const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true };
@@ -93,6 +144,11 @@
     let text = parts.filter(Boolean).join(' ');
     if (matchCategory(text)) return text;
 
+    // Hat das Feld eine eigene, aussagekräftige Beschriftung, die kein bekanntes Thema ist,
+    // nicht den Text der Nachbarfelder übernehmen (sonst landet es beim falschen Thema).
+    const own = cleanLabel(el);
+    if (own && !/antwort|eingabe|answer|tippen|schreib|hier|\.\.\.|…/i.test(own)) return own;
+
     // Umgebenden Text einsammeln (kurze Ancestor-Texte, vorherige Geschwister)
     let node = el;
     for (let i = 0; i < 3 && node && node.parentElement; i++) {
@@ -115,12 +171,40 @@
     return null;
   }
 
+  // Kurze, saubere Beschriftung für Themen, die wir nicht kennen
+  function cleanLabel(el) {
+    const cand = [el.getAttribute('aria-label'), el.placeholder];
+    if (el.labels) for (const l of el.labels) cand.push(l.textContent);
+    for (const c of cand) {
+      const t = (c || '').replace(/\s+/g, ' ').trim();
+      if (t.length >= 2 && t.length <= 45) return t;
+    }
+    return '';
+  }
+
   function findFields() {
-    const out = [];
+    const known = [];
+    const unknown = [];
     for (const el of document.querySelectorAll('input, textarea')) {
       if (!isFillable(el) || el.closest('#slf-helper-host')) continue;
       const category = matchCategory(labelTextFor(el));
-      if (category && SLF_WORDS[category]) out.push({ el, category });
+      if (category) known.push({ el, category });
+      else unknown.push(el);
+    }
+    // Unbekannte Felder nur übernehmen, wenn sie nahe an erkannten Themenfeldern liegen
+    // (sonst würden z. B. Chat- oder Suchfelder als „Thema“ auftauchen).
+    const out = known.slice();
+    for (const el of unknown) {
+      const label = cleanLabel(el);
+      if (!label) continue;
+      let a = el;
+      for (let i = 0; i < 5 && a.parentElement; i++) {
+        a = a.parentElement;
+        if (known.some((k) => a.contains(k.el))) {
+          out.push({ el, category: label, unknown: true });
+          break;
+        }
+      }
     }
     return out;
   }
@@ -129,12 +213,12 @@
   function detectTopics() {
     const topics = [];
     const seen = new Set();
-    const add = (category, el) => {
+    const add = (category, el, unknown) => {
       if (seen.has(category)) return;
       seen.add(category);
-      topics.push({ category, el: el || null });
+      topics.push({ category, el: el || null, unknown: !!unknown });
     };
-    for (const { el, category } of findFields()) add(category, el);
+    for (const { el, category, unknown } of findFields()) add(category, el, unknown);
     if (!topics.length && document.body) {
       let n = 0;
       for (const el of document.body.querySelectorAll('*')) {
@@ -144,7 +228,7 @@
         const t = el.textContent.trim();
         if (t.length < 2 || t.length > 30) continue;
         const category = matchCategory(t);
-        if (category && SLF_WORDS[category]) add(category, null);
+        if (category) add(category, null);
       }
     }
     return topics;
@@ -152,7 +236,8 @@
 
   // ---------- Wörter ----------
   function wordsFor(category, letter) {
-    const list = (SLF_WORDS[category] || '').split(/\s+/).filter(Boolean);
+    const raw = SLF_WORDS[category] || [];
+    const list = Array.isArray(raw) ? raw : raw.split(/\s+/).filter(Boolean);
     return list.filter((w) => w[0].toUpperCase() === letter);
   }
 
@@ -319,7 +404,7 @@
         if (!words.length) {
           const n = document.createElement('span');
           n.className = 'none';
-          n.textContent = `keine Vorschläge mit ${letter}`;
+          n.textContent = SLF_WORDS[category] ? `keine Vorschläge mit ${letter}` : 'noch keine Wortliste für dieses Thema';
           box.appendChild(n);
         }
         for (const w of words) {
