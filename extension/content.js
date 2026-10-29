@@ -312,9 +312,9 @@
         .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
         .sugg { position: fixed; z-index: 2147483647; background: #fff; color: #111;
           border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
-          font: 13px system-ui, sans-serif; display: none; }
+          font: 13px system-ui, sans-serif; display: none; pointer-events: none; }
         .sugg span { display: inline-block; padding: 3px 8px; margin: 2px; border-radius: 6px;
-          background: #ecfdf5; cursor: pointer; }
+          background: #ecfdf5; cursor: pointer; pointer-events: auto; }
         .sugg span:hover { background: #a7f3d0; }
       </style>
       <div class="panel" id="panel">
@@ -476,17 +476,27 @@
     sugg.style.display = 'block';
   }
 
+  let hideTimer;
   document.addEventListener('focusin', (e) => {
+    // Ein noch ausstehendes Ausblenden vom vorherigen Feld darf das neue Fenster nicht schließen
+    clearTimeout(hideTimer);
     if (!settings.enabled || !root) return;
     const el = e.target;
     if (!(el instanceof HTMLElement) || !isFillable(el) || el.closest('#slf-helper-host')) return;
     const category = matchCategory(labelTextFor(el));
     if (category) showSuggestions(el, category);
+    else hideSuggestions();
   });
   document.addEventListener('focusout', () => {
-    const s = root && root.getElementById('sugg');
-    if (s) setTimeout(() => (s.style.display = 'none'), 150);
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideSuggestions, 150);
   });
+  document.addEventListener('scroll', () => hideSuggestions(), true);
+
+  function hideSuggestions() {
+    const s = root && root.getElementById('sugg');
+    if (s) s.style.display = 'none';
+  }
 
   // ---------- Tastenkürzel & Popup-Nachrichten ----------
   document.addEventListener('keydown', (e) => {
