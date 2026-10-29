@@ -277,6 +277,8 @@
   let host, root, lastSignature = '';
   let collapsed = false;
   let shuffleSeed = 0;
+  let lastGood = null;
+  const GRACE_MS = 30000;
 
   function ensurePanel() {
     if (host) return;
@@ -375,7 +377,17 @@
 
     const letter = detectLetter();
     const topics = detectTopics();
-    const signature = letter + '|' + topics.map((t) => t.category).join(',') + '|' + shuffleSeed;
+
+    // Die Seite zeichnet sich z. B. beim Klick in ein Feld neu; dann liefert die Erkennung
+    // kurzzeitig nichts oder weniger. Das Panel behält in dem Fall den letzten guten Stand.
+    const cats = topics.map((t) => t.category);
+    const complete = !!letter && cats.length > 0;
+    const lost = lastGood && cats.length < lastGood.cats.length && cats.every((c) => lastGood.cats.includes(c));
+    const flicker = lastGood && Date.now() - lastGood.time < GRACE_MS && (!complete || (letter === lastGood.letter && lost));
+    if (!force && flicker) return;
+    if (complete) lastGood = { time: Date.now(), letter, cats };
+
+    const signature = letter + '|' + cats.join(',') + '|' + shuffleSeed;
     if (!force && signature === lastSignature) return;
     lastSignature = signature;
 
@@ -508,5 +520,10 @@
         renderPanel();
       }, 300);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    // Falls die Seite das Panel entfernt (z. B. beim Neuaufbau), wieder einhängen
+    new MutationObserver(() => {
+      if (host && !host.isConnected) document.documentElement.appendChild(host);
+    }).observe(document.documentElement, { childList: true });
   });
 })();
