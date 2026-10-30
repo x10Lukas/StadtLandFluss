@@ -8,20 +8,37 @@
   <h1>Stadt Land Fluss Helfer</h1>
   <p id="status" class="status">Prüfe Seite …</p>
 
+  <h2>Allgemein</h2>
   <label class="row"><input type="checkbox" id="enabled"> Helfer aktiv</label>
   <label class="row"><input type="checkbox" id="showPanel"> Panel auf der Seite anzeigen</label>
-  <label class="row"><input type="checkbox" id="overwrite"> Bereits ausgefüllte Felder überschreiben</label>
   <label class="row">Buchstabe manuell:
     <input type="text" id="manualLetter" maxlength="1" size="2" placeholder="auto">
   </label>
-
   <label class="row">Vorschläge pro Thema:
-    <select id="count" style="margin-left:auto">
+    <select id="count">
       <option>3</option><option>4</option><option>5</option><option>6</option><option>8</option>
     </select>
   </label>
 
+  <h2>Automatik &amp; Komfort</h2>
+  <label class="row"><input type="checkbox" id="autoFill"> Bei neuer Runde automatisch ausfüllen</label>
+  <label class="row"><input type="checkbox" id="overwrite"> Bereits ausgefüllte Felder überschreiben</label>
+  <label class="row"><input type="checkbox" id="learn"> Eigene Eingaben lernen</label>
+  <label class="row"><input type="checkbox" id="hotkeys"> Tastenkürzel aktiv</label>
+  <label class="row">Design:
+    <select id="theme">
+      <option value="dark">dunkel</option><option value="light">hell</option><option value="auto">automatisch</option>
+    </select>
+  </label>
+  <label class="row">Panelgröße:
+    <select id="size">
+      <option value="s">klein</option><option value="m">mittel</option><option value="l">groß</option>
+    </select>
+  </label>
+  <p class="hint">Alt+F alle ausfüllen · Alt+1…9 Thema ausfüllen · Alt+R neu mischen · Alt+H Panel ein-/ausklappen</p>
+
   <button id="fill">Jetzt ausfüllen (Alt+F)</button>
+  <button id="options" class="secondary">Eigene Wörter, Favoriten &amp; Statistik …</button>
   <script src="popup.js"></script>
 </body>
 </html>

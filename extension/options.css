@@ -1,0 +1,29 @@
+:root { color-scheme: light dark; --bg:#f9fafb; --fg:#111827; --card:#fff; --muted:#6b7280; --line:#e5e7eb; --acc:#10b981; --accfg:#052e1f; --tag:#ecfdf5; --tagfg:#065f46; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111827; --fg:#f9fafb; --card:#1f2937; --muted:#9ca3af; --line:#374151; --tag:#064e3b; --tagfg:#d1fae5; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px 0; }
+h1 { margin: 0 0 8px; font-size: 18px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; color: var(--muted); cursor: pointer; font: inherit; }
+nav button.active { color: var(--fg); border-bottom-color: var(--acc); font-weight: 600; }
+main { max-width: 760px; margin: 0 auto; padding: 20px 24px 60px; }
+h2 { font-size: 16px; margin: 20px 0 6px; }
+h3 { font-size: 14px; margin: 22px 0 6px; }
+.hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; font-weight: 400; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+.block { display: block; margin: 10px 0; }
+select, input[type=text], textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
+textarea { width: 100%; box-sizing: border-box; margin-top: 4px; resize: vertical; }
+button, .filebtn { font: inherit; padding: 7px 14px; border: 0; border-radius: 8px; background: var(--line); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--acc); color: var(--accfg); font-weight: 600; }
+button.danger { background: transparent; color: #dc2626; border: 1px solid #dc2626; }
+button.small { font-size: 13px; padding: 4px 10px; margin-top: 8px; }
+.msg { color: var(--muted); font-size: 13px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.tag { background: var(--tag); color: var(--tagfg); border-radius: 8px; padding: 3px 10px; font-size: 13px; cursor: pointer; border: 0; }
+.tag small { opacity: .7; margin-left: 4px; }
+.empty { color: var(--muted); font-size: 13px; }
+table { border-collapse: collapse; width: 100%; margin: 6px 0 14px; }
+td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+td.n { text-align: right; width: 60px; }
+.big { font-size: 28px; font-weight: 700; }

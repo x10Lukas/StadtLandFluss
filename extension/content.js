@@ -81,7 +81,11 @@
     ['Name', /\bname|vorname/i],
   ];
 
-  const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4 };
+  const DEFAULTS = {
+    enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4,
+    autoFill: false, theme: 'dark', size: 'm', learn: true, hotkeys: true,
+  };
+  const S = SLF_STORE;
   let settings = { ...DEFAULTS };
   const usedWords = new Set();
 
@@ -98,9 +102,10 @@
       }
     });
 
-  chrome.storage.onChanged.addListener((changes) => {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
-    renderPanel();
+    renderPanel(true);
   });
 
   // ---------- Buchstabe erkennen ----------
@@ -133,6 +138,7 @@
 
   // ---------- Felder erkennen ----------
   function isFillable(el) {
+    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
     if (el.disabled || el.readOnly || el.offsetParent === null) return false;
     if (el.tagName === 'TEXTAREA') return true;
     const type = (el.getAttribute('type') || 'text').toLowerCase();
@@ -175,6 +181,11 @@
   }
 
   function matchCategory(text) {
+    // Eigene Themen (in den Optionen angelegt) zuerst: Name steckt in der Beschriftung
+    const lower = text.toLowerCase();
+    for (const name of Object.keys(S.data.custom)) {
+      if (!SLF_WORDS[name] && name.length >= 3 && lower.includes(name.toLowerCase())) return name;
+    }
     for (const [cat, re] of CATEGORY_PATTERNS) if (re.test(text)) return cat;
     return null;
   }
@@ -248,7 +259,7 @@
     2: 'Chance mittel – manche schreiben das auch',
     3: 'Chance hoch – viele schreiben das auch',
   };
-  const normLetter = (c) => c.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const normLetter = (c) => c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 
   // Bewertung nach Platz in der Liste des Buchstabens: vorn = naheliegend = andere schreiben es auch.
   // 3 = hoch, 2 = mittel, 1 = niedrig, 0 = keine Bewertung (Liste ungeordnet).
@@ -258,34 +269,56 @@
     return f < 1 / 3 ? 3 : f < 2 / 3 ? 2 : 1;
   }
 
+  // Alle Wörter eines Themas zum Buchstaben: eingebaute Liste + eigene + gelernte,
+  // ohne ausgeblendete; mit persönlicher Bewertung und Favoriten-Markierung.
   function wordsFor(category, letter) {
+    const d = S.data;
     const entry = SLF_WORDS[category];
-    const list = (entry && entry.w && entry.w[normLetter(letter)]) || [];
-    return list.map((w, i) => ({ w, r: entry.rated ? rateAt(i, list.length) : 0 }));
+    const L = normLetter(letter);
+    const base = (entry && entry.w && entry.w[L]) || [];
+    const out = [];
+    const seen = new Set();
+    const push = (w, r, own) => {
+      const lower = w.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      const key = S.key(category, w);
+      if (d.hidden[key]) return;
+      out.push({ w, r: d.rate[key] || r, own, fav: !!d.fav[key] });
+    };
+    base.forEach((w, i) => push(w, entry.rated ? rateAt(i, base.length) : 0, false));
+    const ownR = entry && entry.rated ? 2 : 0;
+    for (const list of [d.custom[category], d.learned[category]]) {
+      for (const w of list || []) if (w && normLetter(w[0]) === L) push(w, ownR, true);
+    }
+    return out;
   }
 
-  // Wählt n Vorschläge gemischt aus allen Bewertungsstufen (mittel, niedrig, hoch, …),
-  // sortiert mit den „eigenständigsten“ zuerst.
+  // Wählt n Vorschläge: erst Favoriten, dann gemischt aus allen Bewertungsstufen
+  // (mittel, niedrig, hoch, …); innerhalb der Auswahl mit den „eigenständigsten“ zuerst.
   function pickSuggestions(items, n, seedStr) {
+    const favs = seededShuffle(items.filter((i) => i.fav), `${seedStr}|fav`).slice(0, n);
     const tiers = { 0: [], 1: [], 2: [], 3: [] };
-    for (const it of items) tiers[it.r].push(it);
+    for (const it of items) if (!it.fav) tiers[it.r].push(it);
     for (const k of Object.keys(tiers)) tiers[k] = seededShuffle(tiers[k], `${seedStr}|${k}`);
-    const order = items.some((i) => i.r) ? [2, 1, 3] : [0];
+    const order = [2, 1, 3, 0];
     const picked = [];
-    while (picked.length < n && order.some((t) => tiers[t].length)) {
+    while (favs.length + picked.length < n && order.some((t) => tiers[t].length)) {
       for (const t of order) {
-        if (picked.length >= n) break;
+        if (favs.length + picked.length >= n) break;
         const x = tiers[t].shift();
         if (x) picked.push(x);
       }
     }
-    return picked.sort((a, b) => a.r - b.r);
+    return [...favs, ...picked.sort((a, b) => a.r - b.r)];
   }
 
   function pickWord(category, letter) {
     const pool = wordsFor(category, letter);
     const fresh = pool.filter((x) => !usedWords.has(x.w));
     const src = fresh.length ? fresh : pool;
+    const favs = src.filter((x) => x.fav);
+    if (favs.length) return favs[Math.floor(Math.random() * favs.length)].w;
     for (const tier of [2, 1, 0, 3]) {
       const c = src.filter((x) => x.r === tier);
       if (c.length) return c[Math.floor(Math.random() * c.length)].w;
@@ -293,11 +326,49 @@
     return '';
   }
 
+  // ---------- Statistik & Lernen ----------
+  function recordUse(category, word) {
+    const u = S.data.stats.used;
+    const k = S.key(category, word);
+    u[k] = (u[k] || 0) + 1;
+    S.save();
+  }
+
+  function recordRound(topics) {
+    const st = S.data.stats;
+    st.rounds++;
+    for (const t of topics) st.topics[t.category] = (st.topics[t.category] || 0) + 1;
+    S.save();
+  }
+
+  // Eigene Eingaben, die noch nicht in den Listen stehen, werden für den Buchstaben gemerkt.
+  function learnWord(category, word) {
+    const letter = detectLetter();
+    if (!letter || normLetter(word[0]) !== normLetter(letter)) return;
+    const lower = word.toLowerCase();
+    const known = [
+      ...(((SLF_WORDS[category] || {}).w || {})[normLetter(letter)] || []),
+      ...(S.data.custom[category] || []),
+      ...(S.data.learned[category] || []),
+    ];
+    if (known.some((w) => w.toLowerCase() === lower)) return;
+    const list = (S.data.learned[category] ||= []);
+    list.push(word);
+    if (list.length > 500) list.shift();
+    S.save();
+  }
+
+  let internalSet = false;
   function setValue(el, value) {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
+    internalSet = true;
+    try {
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } finally {
+      internalSet = false;
+    }
   }
 
   function fillAll() {
@@ -310,6 +381,7 @@
       const word = pickWord(category, letter);
       if (!word) continue;
       usedWords.add(word);
+      recordUse(category, word);
       setValue(el, word);
       filled++;
     }
@@ -321,7 +393,73 @@
   let collapsed = false;
   let shuffleSeed = 0;
   let lastGood = null;
+  let searchTerm = '';
+  const expandedCats = new Set();
+  const cycle = {};
   const GRACE_MS = 30000;
+  const SIZES = ['s', 'm', 'l'];
+  const THEMES = ['dark', 'light', 'auto'];
+
+  const PANEL_CSS = `
+    :host { all: initial; }
+    .panel { --bg:#1f2937; --fg:#f9fafb; --muted:#9ca3af; --btn:#374151; --btnh:#4b5563;
+      --chip:#064e3b; --chipfg:#d1fae5; --chiph:#047857; --input:#111827; --acc:#10b981; --acch:#34d399; --accfg:#052e1f;
+      position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; width: 300px;
+      max-height: 75vh; overflow: auto; font: 14px/1.3 system-ui, sans-serif;
+      background: var(--bg); color: var(--fg); border-radius: 12px; padding: 10px 12px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.35); box-sizing: border-box; }
+    .panel.light { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --btn:#e5e7eb; --btnh:#d1d5db;
+      --chip:#ecfdf5; --chipfg:#065f46; --chiph:#a7f3d0; --input:#f3f4f6; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+    .panel.s { width: 250px; font-size: 12px; }
+    .panel.l { width: 400px; font-size: 16px; }
+    .head { display: flex; align-items: center; gap: 8px; cursor: move; user-select: none; }
+    .letter { font-weight: 700; font-size: 1.4em; min-width: 26px; text-align: center;
+      background: var(--btn); border-radius: 8px; padding: 2px 6px; }
+    .title { flex: 1; font-weight: 600; }
+    button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 4px 8px;
+      background: var(--btn); color: var(--fg); }
+    button:hover { background: var(--btnh); }
+    button.primary { background: var(--acc); color: var(--accfg); font-weight: 600; }
+    button.primary:hover { background: var(--acch); }
+    button.on { background: var(--acc); color: var(--accfg); }
+    button.mini { padding: 0 6px; font-size: .85em; margin-left: 4px; line-height: 1.5; }
+    input[type=search] { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 5px 8px; border: 0;
+      border-radius: 8px; background: var(--input); color: var(--fg); font: inherit; outline: none; }
+    .body { margin-top: 6px; }
+    .topic { margin: 8px 0; }
+    .topic h4 { margin: 0 0 4px; font-size: .85em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+      display: flex; align-items: center; }
+    .topic h4 .num { background: var(--btn); border-radius: 4px; padding: 0 5px; margin-right: 6px; color: var(--fg); }
+    .topic h4 .grow { flex: 1; }
+    .all { max-height: 200px; overflow: auto; }
+    .chip { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px; border-radius: 8px;
+      background: var(--chip); color: var(--chipfg); cursor: pointer; font-size: .95em; }
+    .chip:hover { background: var(--chiph); }
+    .chip.r1 { box-shadow: inset 4px 0 0 #34d399; padding-left: 12px; }
+    .chip.r2 { box-shadow: inset 4px 0 0 #fbbf24; padding-left: 12px; }
+    .chip.r3 { box-shadow: inset 4px 0 0 #f87171; padding-left: 12px; }
+    .chip .acts { display: none; margin-left: 6px; }
+    .chip:hover .acts { display: inline; }
+    .chip .acts b { font-weight: 400; opacity: .7; padding: 0 2px; }
+    .chip .acts b:hover { opacity: 1; }
+    .legend { font-size: .8em; color: var(--muted); margin-top: 8px; }
+    .lg { display: inline-block; margin-left: 6px; padding: 0 6px 0 9px; border-radius: 4px; background: var(--btn); color: var(--fg); }
+    .lg.r1 { box-shadow: inset 3px 0 0 #34d399; }
+    .lg.r2 { box-shadow: inset 3px 0 0 #fbbf24; }
+    .lg.r3 { box-shadow: inset 3px 0 0 #f87171; }
+    .none, .msg { font-size: .85em; opacity: .75; }
+    .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+    .toolbar { display: flex; gap: 6px; margin-top: 8px; }
+    .toolbar button { flex: 1; padding: 3px 4px; font-size: .85em; }
+    .sugg { position: fixed; z-index: 2147483647; background: #fff; color: #111;
+      border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
+      font: 13px system-ui, sans-serif; display: none; pointer-events: none; }
+    .sugg span { display: inline-block; padding: 3px 8px; margin: 2px; border-radius: 6px;
+      background: #ecfdf5; cursor: pointer; pointer-events: auto; }
+    .sugg span.r1 { box-shadow: inset 4px 0 0 #10b981; padding-left: 12px; }
+    .sugg span.r2 { box-shadow: inset 4px 0 0 #f59e0b; padding-left: 12px; }
+    .sugg span.r3 { box-shadow: inset 4px 0 0 #ef4444; padding-left: 12px; }
+    .sugg span:hover { background: #a7f3d0; }`;
 
   function ensurePanel() {
     if (host) return;
@@ -329,65 +467,95 @@
     host.id = 'slf-helper-host';
     root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `
-      <style>
-        :host { all: initial; }
-        .panel { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; width: 300px;
-          max-height: 70vh; overflow: auto; font: 14px/1.3 system-ui, sans-serif;
-          background: #1f2937; color: #f9fafb; border-radius: 12px; padding: 10px 12px;
-          box-shadow: 0 6px 24px rgba(0,0,0,.35); }
-        .head { display: flex; align-items: center; gap: 8px; }
-        .letter { font-weight: 700; font-size: 20px; min-width: 26px; text-align: center;
-          background: #374151; border-radius: 8px; padding: 2px 6px; }
-        .title { flex: 1; font-weight: 600; }
-        button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 4px 8px;
-          background: #374151; color: #f9fafb; }
-        button:hover { background: #4b5563; }
-        button.primary { background: #10b981; color: #052e1f; font-weight: 600; }
-        button.primary:hover { background: #34d399; }
-        .body { margin-top: 8px; }
-        .topic { margin: 8px 0; }
-        .topic h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase;
-          letter-spacing: .04em; color: #9ca3af; }
-        .chip { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 9px; border-radius: 8px;
-          background: #064e3b; color: #d1fae5; cursor: pointer; font-size: 13px; }
-        .chip:hover { background: #047857; }
-        .chip.r1 { box-shadow: inset 4px 0 0 #34d399; padding-left: 12px; }
-        .chip.r2 { box-shadow: inset 4px 0 0 #fbbf24; padding-left: 12px; }
-        .chip.r3 { box-shadow: inset 4px 0 0 #f87171; padding-left: 12px; }
-        .legend { font-size: 11px; color: #9ca3af; margin-top: 8px; }
-        .lg { display: inline-block; margin-left: 6px; padding: 0 6px 0 9px; border-radius: 4px; background: #374151; color: #e5e7eb; }
-        .lg.r1 { box-shadow: inset 3px 0 0 #34d399; }
-        .lg.r2 { box-shadow: inset 3px 0 0 #fbbf24; }
-        .lg.r3 { box-shadow: inset 3px 0 0 #f87171; }
-        .none, .msg { font-size: 12px; opacity: .75; }
-        .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-        .sugg { position: fixed; z-index: 2147483647; background: #fff; color: #111;
-          border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.3); padding: 4px;
-          font: 13px system-ui, sans-serif; display: none; pointer-events: none; }
-        .sugg span { display: inline-block; padding: 3px 8px; margin: 2px; border-radius: 6px;
-          background: #ecfdf5; cursor: pointer; pointer-events: auto; }
-        .sugg span.r1 { box-shadow: inset 4px 0 0 #10b981; padding-left: 12px; }
-        .sugg span.r2 { box-shadow: inset 4px 0 0 #f59e0b; padding-left: 12px; }
-        .sugg span.r3 { box-shadow: inset 4px 0 0 #ef4444; padding-left: 12px; }
-        .sugg span:hover { background: #a7f3d0; }
-      </style>
+      <style>${PANEL_CSS}</style>
       <div class="panel" id="panel">
-        <div class="head">
+        <div class="head" id="head" title="Ziehen zum Verschieben, Doppelklick = zurücksetzen">
           <span class="letter" id="letter">?</span>
           <span class="title">Lösungsvorschläge</span>
-          <button id="shuffle" title="Neue Vorschläge">⟳</button>
-          <button id="toggle" title="Ein-/Ausklappen">–</button>
+          <button id="shuffle" title="Neue Vorschläge (Alt+R)">⟳</button>
+          <button id="toggle" title="Ein-/Ausklappen (Alt+H)">–</button>
         </div>
-        <div class="body" id="body"></div>
+        <div id="main">
+          <input type="search" id="search" placeholder="Wörter suchen …" autocomplete="off">
+          <div class="body" id="body"></div>
+          <div class="toolbar" id="toolbar"></div>
+        </div>
       </div>
       <div class="sugg" id="sugg"></div>`;
     document.documentElement.appendChild(host);
+
     root.getElementById('shuffle').addEventListener('click', () => { shuffleSeed++; renderPanel(true); });
-    root.getElementById('toggle').addEventListener('click', () => {
-      collapsed = !collapsed;
-      root.getElementById('body').style.display = collapsed ? 'none' : '';
-      root.getElementById('toggle').textContent = collapsed ? '+' : '–';
+    root.getElementById('toggle').addEventListener('click', () => setCollapsed(!collapsed));
+
+    const search = root.getElementById('search');
+    search.addEventListener('input', () => { searchTerm = search.value.trim().toLowerCase(); renderPanel(true); });
+    // Tastatureingaben im Suchfeld dürfen nicht bei der Seite ankommen (Spiel-Tastenkürzel)
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      search.addEventListener(type, (e) => e.stopPropagation());
+    }
+    setupDrag();
+    applyPos();
+  }
+
+  function setCollapsed(value) {
+    collapsed = value;
+    if (!root) return;
+    root.getElementById('main').style.display = collapsed ? 'none' : '';
+    root.getElementById('toggle').textContent = collapsed ? '+' : '–';
+  }
+
+  function applyLook() {
+    const panel = root.getElementById('panel');
+    const dark = settings.theme === 'auto' ? matchMedia('(prefers-color-scheme: dark)').matches : settings.theme !== 'light';
+    panel.classList.toggle('light', !dark);
+    for (const s of SIZES) panel.classList.toggle(s, settings.size === s);
+  }
+
+  // ---------- Panel verschieben ----------
+  function applyPos() {
+    const panel = root && root.getElementById('panel');
+    const pos = S.data.pos;
+    if (!panel) return;
+    if (!pos) {
+      panel.style.left = panel.style.top = '';
+      panel.style.right = panel.style.bottom = '';
+      return;
+    }
+    const x = Math.min(Math.max(0, pos.x), Math.max(0, innerWidth - 80));
+    const y = Math.min(Math.max(0, pos.y), Math.max(0, innerHeight - 40));
+    panel.style.left = x + 'px';
+    panel.style.top = y + 'px';
+    panel.style.right = panel.style.bottom = 'auto';
+  }
+
+  function setupDrag() {
+    const head = root.getElementById('head');
+    const panel = root.getElementById('panel');
+    head.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button')) return;
+      S.data.pos = null;
+      S.save();
+      applyPos();
     });
+    head.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('button')) return;
+      const r = panel.getBoundingClientRect();
+      const dx = e.clientX - r.left;
+      const dy = e.clientY - r.top;
+      const move = (ev) => {
+        S.data.pos = { x: ev.clientX - dx, y: ev.clientY - dy };
+        applyPos();
+      };
+      const up = () => {
+        removeEventListener('mousemove', move, true);
+        removeEventListener('mouseup', up, true);
+        S.save();
+      };
+      addEventListener('mousemove', move, true);
+      addEventListener('mouseup', up, true);
+      e.preventDefault();
+    });
+    addEventListener('resize', applyPos);
   }
 
   function setMsg(text) {
@@ -421,6 +589,65 @@
     return r;
   }
 
+  const mk = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  function saveSetting(patch) {
+    Object.assign(settings, patch);
+    try { chrome.storage.sync.set(patch); } catch (e) { /* ignorieren */ }
+    renderPanel(true);
+  }
+
+  function makeChip(item, category, el) {
+    const { w, r, own, fav } = item;
+    const chip = mk('span', 'chip' + (r ? ` r${r}` : ''));
+    chip.append(mk('span', 't', (fav ? '★ ' : '') + w + (own ? ' ✎' : '')));
+    chip.title = (r ? RATING_TEXT[r] + '\n' : '') + (own ? 'Eigenes Wort\n' : '') +
+      (el ? 'Klicken: ins Feld eintragen & kopieren' : 'Klicken: kopieren');
+
+    const acts = mk('span', 'acts');
+    const star = mk('b', null, fav ? '☆' : '★');
+    star.title = fav ? 'Favorit entfernen' : 'Als Favorit merken (wird immer vorgeschlagen)';
+    const rate = mk('b', null, '◐');
+    rate.title = 'Bewertung ändern: niedrig → mittel → hoch';
+    const hide = mk('b', null, '✕');
+    hide.title = 'Ausblenden (in den Optionen wiederherstellbar)';
+    acts.append(star, rate, hide);
+    chip.append(acts);
+
+    const key = S.key(category, w);
+    const act = (fn) => (e) => { e.stopPropagation(); fn(); S.save(); renderPanel(true); };
+    star.addEventListener('click', act(() => { if (fav) delete S.data.fav[key]; else S.data.fav[key] = 1; }));
+    rate.addEventListener('click', act(() => { S.data.rate[key] = (r % 3) + 1; }));
+    hide.addEventListener('click', act(() => { S.data.hidden[key] = 1; }));
+
+    chip.addEventListener('mousedown', (e) => e.preventDefault());
+    chip.addEventListener('click', () => {
+      copyText(w);
+      usedWords.add(w);
+      recordUse(category, w);
+      if (el && el.isConnected) setValue(el, w);
+      setMsg(`„${w}“ ${el ? 'eingetragen & ' : ''}kopiert.`);
+    });
+    return chip;
+  }
+
+  function addOwnWord(category, letter) {
+    let w;
+    try { w = prompt(`Eigenes Wort für „${category}“ hinzufügen:`, ''); } catch (e) { return; }
+    w = (w || '').trim();
+    if (!w) return;
+    const list = (S.data.custom[category] ||= []);
+    if (!list.some((x) => x.toLowerCase() === w.toLowerCase())) list.push(w);
+    S.save();
+    renderPanel(true);
+    setMsg(normLetter(w[0]) === normLetter(letter) ? `„${w}“ gespeichert.` : `„${w}“ gespeichert (für Buchstabe ${normLetter(w[0])}).`);
+  }
+
   function renderPanel(force) {
     if (!settings.enabled || !settings.showPanel) {
       if (host) host.style.display = 'none';
@@ -428,6 +655,7 @@
     }
     ensurePanel();
     host.style.display = '';
+    applyLook();
 
     const letter = detectLetter();
     const topics = detectTopics();
@@ -441,7 +669,8 @@
     if (!force && flicker) return;
     if (complete) lastGood = { time: Date.now(), letter, cats };
 
-    const signature = letter + '|' + cats.join(',') + '|' + shuffleSeed + '|' + settings.count;
+    const signature = [letter, cats.join(','), shuffleSeed, settings.count, settings.autoFill, settings.size,
+      settings.theme, searchTerm, [...expandedCats].join(',')].join('|');
     if (!force && signature === lastSignature) return;
     lastSignature = signature;
 
@@ -450,70 +679,91 @@
     body.innerHTML = '';
 
     if (!letter || !topics.length) {
-      const p = document.createElement('div');
-      p.className = 'none';
-      p.textContent = !letter
+      body.appendChild(mk('div', 'none', !letter
         ? 'Buchstabe nicht erkannt – im Popup manuell eingeben.'
-        : 'Keine Themen erkannt – sind Felder/Themen auf der Seite sichtbar?';
-      body.appendChild(p);
+        : 'Keine Themen erkannt – sind Felder/Themen auf der Seite sichtbar?'));
     }
 
     let anyRated = false;
+    let anyShown = false;
     const topicsBox = document.createElement('div');
     if (letter) {
-      for (const { category, el } of topics) {
-        const words = pickSuggestions(wordsFor(category, letter), settings.count, `${shuffleSeed}|${category}|${letter}`);
-        if (words.some((x) => x.r)) anyRated = true;
-        const box = document.createElement('div');
-        box.className = 'topic';
-        const h = document.createElement('h4');
-        h.textContent = category;
+      topics.forEach(({ category, el }, idx) => {
+        const items = wordsFor(category, letter);
+        let shown;
+        let showAll = false;
+        if (searchTerm) { shown = items.filter((i) => i.w.toLowerCase().includes(searchTerm)); showAll = true; }
+        else if (expandedCats.has(category)) { shown = items; showAll = true; }
+        else shown = pickSuggestions(items, settings.count, `${shuffleSeed}|${category}|${letter}`);
+        if (searchTerm && !shown.length) return;
+        anyShown = true;
+        if (shown.some((x) => x.r)) anyRated = true;
+
+        const box = mk('div', 'topic');
+        const h = mk('h4');
+        if (idx < 9) h.append(mk('span', 'num', String(idx + 1)));
+        h.append(mk('span', 'grow', category));
+        const add = mk('button', 'mini', '+');
+        add.title = 'Eigenes Wort zu diesem Thema hinzufügen';
+        add.addEventListener('click', () => addOwnWord(category, letter));
+        const more = mk('button', 'mini', expandedCats.has(category) ? '▴' : '▾');
+        more.title = `Alle ${items.length} Wörter mit ${letter} anzeigen/ausblenden`;
+        more.addEventListener('click', () => {
+          if (expandedCats.has(category)) expandedCats.delete(category); else expandedCats.add(category);
+          renderPanel(true);
+        });
+        h.append(add, more);
         box.appendChild(h);
-        if (!words.length) {
-          const n = document.createElement('span');
-          n.className = 'none';
-          n.textContent = SLF_WORDS[category] ? `keine Vorschläge mit ${letter}` : 'noch keine Wortliste für dieses Thema';
-          box.appendChild(n);
+
+        if (!shown.length) {
+          box.appendChild(mk('span', 'none', SLF_WORDS[category] || S.data.custom[category]
+            ? `keine Vorschläge mit ${letter}` : 'noch keine Wortliste für dieses Thema – mit + eigene Wörter hinzufügen'));
         }
-        for (const { w, r } of words) {
-          const chip = document.createElement('span');
-          chip.className = 'chip' + (r ? ` r${r}` : '');
-          chip.textContent = w;
-          chip.title = (r ? RATING_TEXT[r] + '\n' : '') + (el ? 'Klicken: ins Feld eintragen & kopieren' : 'Klicken: kopieren');
-          chip.addEventListener('mousedown', (e) => e.preventDefault());
-          chip.addEventListener('click', () => {
-            copyText(w);
-            usedWords.add(w);
-            if (el && el.isConnected) setValue(el, w);
-            setMsg(`„${w}“ ${el ? 'eingetragen & ' : ''}kopiert.`);
-          });
-          box.appendChild(chip);
-        }
+        const list = showAll ? mk('div', 'all') : box;
+        for (const item of shown) list.appendChild(makeChip(item, category, el));
+        if (showAll) box.appendChild(list);
         topicsBox.appendChild(box);
-      }
+      });
     }
+    if (searchTerm && letter && !anyShown) body.appendChild(mk('div', 'none', 'Keine Treffer für diesen Buchstaben.'));
 
     if (anyRated) {
-      const legend = document.createElement('div');
-      legend.className = 'legend';
-      legend.innerHTML = 'Chance, dass andere es auch schreiben: ' +
-        '<span class="lg r1">niedrig</span><span class="lg r2">mittel</span><span class="lg r3">hoch</span>';
+      const legend = mk('div', 'legend', 'Chance, dass andere es auch schreiben: ');
+      for (const [c, t] of [['r1', 'niedrig'], ['r2', 'mittel'], ['r3', 'hoch']]) legend.append(mk('span', `lg ${c}`, t));
       body.appendChild(legend);
     }
     body.appendChild(topicsBox);
 
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-    const fill = document.createElement('button');
-    fill.className = 'primary';
-    fill.textContent = 'Alle ausfüllen';
+    const actions = mk('div', 'actions');
+    const fill = mk('button', 'primary', 'Alle ausfüllen');
     fill.title = 'Alt+F';
     fill.addEventListener('click', doFill);
-    const msg = document.createElement('span');
-    msg.className = 'msg';
+    const msg = mk('span', 'msg');
     msg.id = 'msg';
     actions.append(fill, msg);
     body.appendChild(actions);
+
+    renderToolbar();
+  }
+
+  function renderToolbar() {
+    const bar = root.getElementById('toolbar');
+    bar.innerHTML = '';
+    const auto = mk('button', settings.autoFill ? 'on' : '', `Auto: ${settings.autoFill ? 'an' : 'aus'}`);
+    auto.title = 'Bei jeder neuen Runde automatisch ausfüllen';
+    auto.addEventListener('click', () => saveSetting({ autoFill: !settings.autoFill }));
+    const size = mk('button', '', 'Aa');
+    size.title = `Größe: ${{ s: 'klein', m: 'mittel', l: 'groß' }[settings.size]} (klicken zum Wechseln)`;
+    size.addEventListener('click', () => saveSetting({ size: SIZES[(SIZES.indexOf(settings.size) + 1) % SIZES.length] }));
+    const theme = mk('button', '', '◐');
+    theme.title = `Design: ${{ dark: 'dunkel', light: 'hell', auto: 'automatisch' }[settings.theme]} (klicken zum Wechseln)`;
+    theme.addEventListener('click', () => saveSetting({ theme: THEMES[(THEMES.indexOf(settings.theme) + 1) % THEMES.length] }));
+    const opts = mk('button', '', '⚙');
+    opts.title = 'Optionen: eigene Wörter, Favoriten, Statistik';
+    opts.addEventListener('click', () => {
+      try { chrome.runtime.sendMessage({ type: 'openOptions' }); } catch (e) { /* Extension neu geladen */ }
+    });
+    bar.append(auto, size, theme, opts);
   }
 
   // ---------- Vorschläge beim Fokussieren ----------
@@ -525,13 +775,14 @@
       : [];
     if (!words.length) { sugg.style.display = 'none'; return; }
     sugg.innerHTML = '';
-    for (const { w, r } of words) {
+    for (const { w, r, fav } of words) {
       const s = document.createElement('span');
       if (r) { s.className = `r${r}`; s.title = RATING_TEXT[r]; }
-      s.textContent = w;
+      s.textContent = (fav ? '★ ' : '') + w;
       s.addEventListener('mousedown', (e) => {
         e.preventDefault();
         usedWords.add(w);
+        recordUse(category, w);
         setValue(el, w);
         sugg.style.display = 'none';
       });
@@ -566,12 +817,54 @@
     if (s) s.style.display = 'none';
   }
 
+  // Eigene Eingaben mitzählen und neue Wörter lernen (nur echte Eingaben, nicht unsere eigenen)
+  document.addEventListener('change', (e) => {
+    if (internalSet || !settings.enabled) return;
+    const el = e.target;
+    if (!(el instanceof HTMLElement) || !isFillable(el) || el.closest('#slf-helper-host')) return;
+    const value = (el.value || '').trim();
+    if (value.length < 2) return;
+    const category = matchCategory(labelTextFor(el)) || cleanLabel(el);
+    if (!category) return;
+    recordUse(category, value);
+    if (settings.learn) learnWord(category, value);
+  }, true);
+
   // ---------- Tastenkürzel & Popup-Nachrichten ----------
+  function fillTopic(n) {
+    const letter = detectLetter();
+    const t = detectTopics()[n - 1];
+    if (!letter || !t) return;
+    ensurePanel();
+    const items = wordsFor(t.category, letter);
+    if (!items.length) { setMsg(`Keine Vorschläge für „${t.category}“ mit ${letter}.`); return; }
+    const ordered = pickSuggestions(items, items.length, `${shuffleSeed}|${t.category}|${letter}`);
+    cycle[t.category] = ((cycle[t.category] ?? -1) + 1) % ordered.length;
+    const w = ordered[cycle[t.category]].w;
+    usedWords.add(w);
+    recordUse(t.category, w);
+    if (t.el && t.el.isConnected) setValue(t.el, w);
+    else copyText(w);
+    setMsg(`${t.category}: „${w}“`);
+  }
+
   document.addEventListener('keydown', (e) => {
-    if (settings.enabled && e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'f') {
+    if (!settings.enabled || !settings.hotkeys || !e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.code === 'KeyF') {
       e.preventDefault();
       ensurePanel();
       doFill();
+    } else if (e.code === 'KeyR') {
+      e.preventDefault();
+      shuffleSeed++;
+      renderPanel(true);
+    } else if (e.code === 'KeyH') {
+      e.preventDefault();
+      ensurePanel();
+      setCollapsed(!collapsed);
+    } else if (/^Digit[1-9]$/.test(e.code)) {
+      e.preventDefault();
+      fillTopic(Number(e.code.slice(5)));
     }
   });
 
@@ -584,18 +877,46 @@
     }
   });
 
+  // ---------- Neue Runde erkennen (Automatik, Statistik) ----------
+  const seenFields = new WeakSet();
+  let roundLetter = '';
+  let lastRoundAt = 0;
+
+  function checkNewRound() {
+    if (!settings.enabled) return;
+    const letter = detectLetter();
+    const topics = detectTopics();
+    if (!letter || !topics.length) return;
+    const withEl = topics.filter((t) => t.el);
+    const allFresh = withEl.length > 0 && withEl.every((t) => !seenFields.has(t.el));
+    const allEmpty = withEl.every((t) => !t.el.value);
+    for (const t of withEl) seenFields.add(t.el);
+    const letterChanged = letter !== roundLetter;
+    roundLetter = letter;
+    // Neue Felder allein (Seite zeichnet neu) zählen nur als neue Runde, wenn alle leer sind
+    // und die letzte Runde schon länger her ist.
+    const newRound = letterChanged || (allFresh && allEmpty && Date.now() - lastRoundAt > 20000);
+    if (!newRound) return;
+    lastRoundAt = Date.now();
+    usedWords.clear();
+    for (const k of Object.keys(cycle)) delete cycle[k];
+    recordRound(topics);
+    if (settings.autoFill) setTimeout(() => { fillAll(); renderPanel(true); }, 400);
+  }
+
   // ---------- Start ----------
-  loadSettings().then(() => {
+  Promise.all([loadSettings(), S.load()]).then(() => {
+    S.onChange(() => renderPanel(true));
     renderPanel();
-    // Buchstabe im Panel aktuell halten, wenn sich die Seite ändert (neue Runde)
+    checkNewRound();
+    // Panel aktuell halten, wenn sich die Seite ändert (neue Runde)
     let t;
     new MutationObserver(() => {
       clearTimeout(t);
       t = setTimeout(() => {
-        if (!settings.enabled || !settings.showPanel) return;
-        const before = lastSignature.split('|')[0];
-        if (detectLetter() !== before) usedWords.clear();
-        renderPanel();
+        if (!settings.enabled) return;
+        if (settings.showPanel) renderPanel();
+        checkNewRound();
       }, 300);
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
 

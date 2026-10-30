@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Stadt Land Fluss Helfer – Optionen</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <h1>Stadt Land Fluss Helfer</h1>
+    <nav>
+      <button data-tab="words" class="active">Eigene Wörter</button>
+      <button data-tab="marks">Favoriten &amp; Ausgeblendet</button>
+      <button data-tab="stats">Statistik</button>
+      <button data-tab="data">Daten</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-words">
+      <h2>Eigene Wörter</h2>
+      <p class="hint">Wörter werden nach ihrem Anfangsbuchstaben einsortiert und im Panel zusammen mit den eingebauten Wörtern vorgeschlagen (mit ✎ markiert). Ein <b>eigenes Thema</b> wird auf der Seite erkannt, wenn sein Name in der Beschriftung des Feldes vorkommt.</p>
+      <div class="row">
+        <label>Thema <select id="topic"></select></label>
+        <input type="text" id="newTopic" placeholder="Neues eigenes Thema …">
+        <button id="addTopic">Thema anlegen</button>
+      </div>
+      <label class="block">Eigene Wörter (eins pro Zeile)
+        <textarea id="customWords" rows="10" spellcheck="false"></textarea>
+      </label>
+      <div class="row">
+        <button id="saveWords" class="primary">Speichern</button>
+        <button id="deleteTopic" class="danger">Eigenes Thema löschen</button>
+        <span id="wordsMsg" class="msg"></span>
+      </div>
+      <h3>Gelernte Wörter <span class="hint">(aus deinen eigenen Eingaben)</span></h3>
+      <div id="learned" class="tags"></div>
+      <button id="clearLearned" class="danger small">Gelernte Wörter dieses Themas löschen</button>
+    </section>
+
+    <section id="tab-marks" hidden>
+      <h2>Favoriten</h2>
+      <p class="hint">Favoriten werden im Panel immer zuerst vorgeschlagen. Im Panel mit ★ am Wort setzen.</p>
+      <div id="favs" class="tags"></div>
+      <h2>Ausgeblendet</h2>
+      <p class="hint">Mit ✕ am Wort im Panel ausgeblendet. Klick auf ein Wort stellt es wieder her.</p>
+      <div id="hidden" class="tags"></div>
+      <h2>Eigene Bewertungen</h2>
+      <p class="hint">Mit ◐ am Wort geändert. Klick auf ein Wort setzt die ursprüngliche Bewertung zurück.</p>
+      <div id="rates" class="tags"></div>
+    </section>
+
+    <section id="tab-stats" hidden>
+      <h2>Statistik</h2>
+      <div id="statsBox"></div>
+      <button id="resetStats" class="danger small">Statistik zurücksetzen</button>
+    </section>
+
+    <section id="tab-data" hidden>
+      <h2>Daten sichern</h2>
+      <p class="hint">Eigene Wörter, Favoriten, Bewertungen und Statistik als Datei sichern oder wiederherstellen.</p>
+      <div class="row">
+        <button id="export" class="primary">Exportieren</button>
+        <label class="filebtn">Importieren <input type="file" id="import" accept="application/json" hidden></label>
+        <button id="resetAll" class="danger">Alles löschen</button>
+      </div>
+      <p id="dataMsg" class="msg"></p>
+    </section>
+  </main>
+
+  <script src="words.js"></script>
+  <script src="store.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -2,30 +2,39 @@
 
 Chrome/Edge-Extension (Manifest V3) für https://stadtlandfluss.cool/
 
-- Erkennt den aktuellen Buchstaben (Text „Buchstabe: X“ oder großes Einzelzeichen auf der Seite; sonst manuell im Popup).
-- Ordnet Eingabefelder anhand ihrer Beschriftung einer Kategorie zu (Stadt, Land, Fluss, Name, Tier, Beruf, …).
-- Erkennt die ausgewählten Themen (über Eingabefelder, sonst über sichtbare Themen-Texte) und zeigt im Panel unten rechts Lösungsvorschläge je Thema zum gewählten Buchstaben.
-- Klick auf einen Vorschlag kopiert ihn und trägt ihn – falls ein Feld existiert – dort ein. ⟳ mischt neue Vorschläge.
-- „Alle ausfüllen“ (Panel, Popup oder **Alt+F**) füllt leere Felder automatisch.
-- Beim Fokussieren eines Feldes erscheinen zusätzlich Wortvorschläge zum Anklicken.
+Erkennt Buchstabe und Themen der Runde und zeigt zu jedem Thema bewertete Lösungsvorschläge.
 
 ## Installation
 1. `chrome://extensions` öffnen, **Entwicklermodus** aktivieren.
 2. **Entpackte Erweiterung laden** → Ordner `extension/` wählen.
+3. Nach Updates die Extension neu laden und die Seite aktualisieren.
+
+## Funktionen
+- **Vorschläge je Thema** (Panel unten rechts, Standard 4 pro Thema, ⟳ mischt neu). Klick auf ein Wort trägt es ins Feld ein und kopiert es.
+- **Bewertung** – Farbbalken am Wort: 🟢 niedrig, 🟡 mittel, 🔴 hoch = Chance, dass andere dasselbe schreiben (Schätzung: naheliegende Wörter stehen in `words.js` vorn).
+- **Mehr Wörter & Suche** – ▾ am Thema zeigt alle Wörter zum Buchstaben, das Suchfeld filtert über alle Themen.
+- **Eigene Wörter & Favoriten** – `+` am Thema fügt ein eigenes Wort hinzu (✎). Beim Überfahren eines Wortes: ★ Favorit (wird immer zuerst vorgeschlagen), ◐ Bewertung ändern, ✕ ausblenden. Alles verwaltbar in den **Optionen** (auch eigene Themen).
+- **Lernen & Statistik** – eigene Eingaben werden als „gelernte Wörter“ gemerkt (abschaltbar); Optionen → Statistik zeigt Runden, Themen und meistbenutzte Wörter.
+- **Automatik & Komfort** (als Button im Panel *und* im Popup einstellbar):
+  - *Auto* – bei jeder neuen Runde automatisch ausfüllen
+  - Panel **verschiebbar** (an der Kopfzeile ziehen, Doppelklick = zurücksetzen), Größe klein/mittel/groß, Design dunkel/hell/automatisch
+  - Tastenkürzel: **Alt+F** alle ausfüllen · **Alt+1…9** Thema n ausfüllen (nochmal = nächster Vorschlag) · **Alt+R** neu mischen · **Alt+H** Panel ein-/ausklappen
+- Beim Klick in ein Eingabefeld erscheinen die Vorschläge auch direkt am Feld.
+
+## Daten
+Eigene Wörter, Favoriten, Bewertungen und Statistik liegen lokal im Browser (`chrome.storage.local`). Optionen → Daten: Export/Import als JSON.
+
+## Aufbau
+| Datei | Aufgabe |
+| --- | --- |
+| `content.js` | Erkennung von Buchstabe/Themen, Panel, Automatik |
+| `words.js` | eingebaute Wortlisten (`{ rated, w: { Buchstabe: [Wörter] } }`) |
+| `store.js` | gemeinsamer Datenspeicher (eigene Wörter, Favoriten, Statistik) |
+| `popup.*` | Schnelleinstellungen |
+| `options.*` | eigene Wörter, Favoriten, Statistik, Export/Import |
+| `background.js` | öffnet die Optionsseite aus dem Panel |
 
 ## Anpassen
-- Wörter: `words.js` (eine Liste pro Kategorie).
-- Kategorie-Erkennung: `CATEGORY_PATTERNS` in `content.js`.
-- Die Seitenstruktur war beim Erstellen nicht einsehbar, daher arbeitet die Erkennung heuristisch. Falls Felder oder der Buchstabe nicht erkannt werden, `detectLetter()` / `labelTextFor()` in `content.js` an das echte DOM anpassen.
-
-## Themen
-Die Extension kennt über 70 Themen (die Standardthemen des Spiels plus Spezialthemen wie „Grund für Verspätung“, „Tut weh“ oder „Sollte man nicht essen“). Themen ohne Wortliste erscheinen trotzdem im Panel, mit dem Hinweis „noch keine Wortliste“.
-Neues Thema ergänzen: Wortliste in `words.js` (Schlüssel = Themenname) und passendes Muster in `CATEGORY_PATTERNS` (`content.js`).
-
-## Bewertung („Chance, dass andere es auch schreiben“)
-In `words.js` stehen die Wörter je Buchstabe nach Naheliegen sortiert: das naheliegendste zuerst. Daraus ergibt sich die Markierung im Panel:
-- 🟢 **niedrig** – eher eigenständig, vermutlich schreibt es kaum jemand sonst
-- 🟡 **mittel**
-- 🔴 **hoch** – naheliegend, viele schreiben es auch
-
-Pro Thema werden standardmäßig 4 gemischte Vorschläge gezeigt (im Popup einstellbar, ⟳ mischt neu). Neue Wörter einfach an der passenden Stelle im Buchstaben-Array einfügen. Themen mit `rated: false` haben keine Bewertung.
+- Eingebaute Wörter: `words.js`. Je Buchstabe das naheliegendste Wort zuerst; so entsteht die Bewertung. Themen mit `rated: false` haben keine Bewertung.
+- Neues Thema: Wortliste in `words.js` (Schlüssel = Themenname) und Muster in `CATEGORY_PATTERNS` (`content.js`). Für persönliche Themen reicht ein eigenes Thema in den Optionen.
+- Die Seitenstruktur wird heuristisch erkannt (Beschriftung von Feldern, Text „Buchstabe: X“). Falls etwas nicht erkannt wird, `detectLetter()` / `labelTextFor()` in `content.js` anpassen.

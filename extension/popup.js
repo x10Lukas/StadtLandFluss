@@ -1,4 +1,9 @@
-const DEFAULTS = { enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4 };
+const DEFAULTS = {
+  enabled: true, manualLetter: '', overwrite: false, showPanel: true, count: 4,
+  autoFill: false, theme: 'dark', size: 'm', learn: true, hotkeys: true,
+};
+const CHECKS = ['enabled', 'showPanel', 'overwrite', 'autoFill', 'learn', 'hotkeys'];
+const SELECTS = { count: Number, theme: String, size: String };
 const $ = (id) => document.getElementById(id);
 
 function withTab(cb) {
@@ -24,22 +29,20 @@ function refreshStatus() {
 }
 
 chrome.storage.sync.get(DEFAULTS, (s) => {
-  $('enabled').checked = s.enabled;
-  $('showPanel').checked = s.showPanel;
-  $('overwrite').checked = s.overwrite;
+  for (const k of CHECKS) $(k).checked = s[k];
+  for (const k of Object.keys(SELECTS)) $(k).value = String(s[k]);
   $('manualLetter').value = s.manualLetter;
-  $('count').value = String(s.count);
   refreshStatus();
 });
 
-for (const key of ['enabled', 'showPanel', 'overwrite']) {
+for (const key of CHECKS) {
   $(key).addEventListener('change', () => {
     chrome.storage.sync.set({ [key]: $(key).checked }, refreshStatus);
   });
 }
-$('count').addEventListener('change', () => {
-  chrome.storage.sync.set({ count: Number($('count').value) });
-});
+for (const [key, conv] of Object.entries(SELECTS)) {
+  $(key).addEventListener('change', () => chrome.storage.sync.set({ [key]: conv($(key).value) }));
+}
 $('manualLetter').addEventListener('input', () => {
   const v = $('manualLetter').value.trim().toUpperCase();
   $('manualLetter').value = v;
@@ -54,3 +57,4 @@ $('fill').addEventListener('click', () => {
       : 'Öffne stadtlandfluss.cool, um den Helfer zu nutzen.';
   });
 });
+$('options').addEventListener('click', () => chrome.runtime.openOptionsPage());
