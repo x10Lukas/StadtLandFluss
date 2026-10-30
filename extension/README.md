@@ -19,7 +19,7 @@ Chrome/Edge-Extension (Manifest V3) für https://stadtlandfluss.cool/
 - Die Seitenstruktur war beim Erstellen nicht einsehbar, daher arbeitet die Erkennung heuristisch. Falls Felder oder der Buchstabe nicht erkannt werden, `detectLetter()` / `labelTextFor()` in `content.js` an das echte DOM anpassen.
 
 ## Themen
-Die Extension kennt über 60 Themen (die Standardthemen des Spiels plus Spezialthemen wie „Grund für Verspätung“, „Tut weh“ oder „Sollte man nicht essen“). Themen ohne Wortliste erscheinen trotzdem im Panel, mit dem Hinweis „noch keine Wortliste“.
+Die Extension kennt über 70 Themen (die Standardthemen des Spiels plus Spezialthemen wie „Grund für Verspätung“, „Tut weh“ oder „Sollte man nicht essen“). Themen ohne Wortliste erscheinen trotzdem im Panel, mit dem Hinweis „noch keine Wortliste“.
 Neues Thema ergänzen: Wortliste in `words.js` (Schlüssel = Themenname) und passendes Muster in `CATEGORY_PATTERNS` (`content.js`).
 
 ## Bewertung („Chance, dass andere es auch schreiben“)

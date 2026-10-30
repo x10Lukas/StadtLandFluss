@@ -7,6 +7,13 @@
   // Reihenfolge wichtig: spezifische Themen zuerst, allgemeine (Stadt, Land, Name …) zuletzt.
   // Der Themenname muss ein Schlüssel in SLF_WORDS (words.js) sein, um Vorschläge zu liefern.
   const CATEGORY_PATTERNS = [
+    ['Red Flags', /red\s*flag/i],
+    ['Green Flags', /green\s*flag/i],
+    ['Ungewöhnlicher Ort für Sex', /ungewöhnlich|\bsex\b/i],
+    ['Fußballverein', /fu(ß|ss)ball\s*-?\s*(verein|club|klub)|\bverein/i],
+    ['Kindheitshelden', /kindheit/i],
+    ['Songs', /\bsongs?\b|\blieder?\b/i],
+    ['Alkohol', /alkohol/i],
     ['Sollte man nicht essen', /nicht\s+essen/i],
     ['Sollte man nicht auf der Toilette tun', /toilette/i],
     ['Namen den man keinem Kind geben sollte', /keinem\s+kind|kind\s+geben/i],
