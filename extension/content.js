@@ -37,6 +37,7 @@
     ['Tut weh', /tut\s+weh/i],
     ['Chemisches Element', /chemisch|\belement/i],
     ['Computerspiel', /computerspiel|videospiel/i],
+    ['Spiele', /\bspiele?\b|brettspiel|kartenspiel|gesellschaftsspiel|partyspiel/i],
     ['Fortbewegungsmittel', /fortbewegung/i],
     ['Fabelwesen', /fabelwesen/i],
     ['Dinoart', /dino/i],
